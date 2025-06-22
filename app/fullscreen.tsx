@@ -7,7 +7,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   Platform,
   StyleSheet,
   Text,
@@ -15,8 +14,6 @@ import {
   View
 } from "react-native";
 import { WebView } from "react-native-webview";
-
-const { width, height } = Dimensions.get("window");
 
 export default function FullscreenScreen() {
   const { ipAddress } = useLocalSearchParams<{ ipAddress: string }>();
@@ -52,6 +49,110 @@ export default function FullscreenScreen() {
     setIsPaused(!isPaused);
   };
 
+  const injectedJavaScript = `
+    const img = document.querySelector('img');
+    if (img) {
+      img.onload = () => {
+        window.ReactNativeWebView.postMessage('stream-loaded');
+      };
+      if (img.complete) {
+        window.ReactNativeWebView.postMessage('stream-loaded');
+      }
+    }
+  `;
+
+  if (!ipAddress) {
+    return (
+      <View style={[styles.container, { backgroundColor }]}>
+        <TouchableOpacity
+          style={styles.videoContainer}
+          activeOpacity={1}
+          onPress={handleScreenPress}>
+          <WebView
+            source={{ uri: `http://${ipAddress}:81/stream` }}
+            style={styles.webview}
+            injectedJavaScript={injectedJavaScript}
+            onMessage={(event) => {
+              if (event.nativeEvent.data === "stream-loaded") {
+                setIsLoading(false);
+              }
+            }}
+            onLoadStart={() => {
+              console.log("WebView: Chargement démarré");
+              setIsLoading(true);
+            }}
+            onError={(syntheticEvent) => {
+              const { nativeEvent } = syntheticEvent;
+              console.log("WebView: Erreur de chargement", nativeEvent);
+              setIsLoading(false);
+            }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            scalesPageToFit={true}
+            mediaPlaybackRequiresUserAction={false}
+            allowsFullscreenVideo={true}
+            allowsInlineMediaPlayback={true}
+            onShouldStartLoadWithRequest={() => true}
+            originWhitelist={["*"]}
+            mixedContentMode="always"
+            cacheEnabled={false}
+            incognito={true}
+            androidLayerType="hardware"
+            androidHardwareAccelerationDisabled={false}
+            renderLoading={() => <View />}
+          />
+          {isLoading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#1a73e8" />
+              <Text style={styles.loadingText}>
+                Chargement du flux vidéo...
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {showControls && (
+          <View style={styles.controlsOverlay}>
+            <View style={styles.topControls}>
+              <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+                <Ionicons name="arrow-back" size={28} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.title}>Surveillance en direct</Text>
+            </View>
+
+            <View style={styles.centerControls}>
+              <TouchableOpacity
+                style={styles.controlButton}
+                onPress={togglePause}>
+                <Ionicons
+                  name={isPaused ? "play" : "pause"}
+                  size={32}
+                  color="#fff"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.bottomControls}>
+              <TouchableOpacity
+                style={styles.controlButton}
+                onPress={toggleMute}>
+                <Ionicons
+                  name={isMuted ? "volume-mute" : "volume-high"}
+                  size={24}
+                  color="#fff"
+                />
+              </TouchableOpacity>
+              <Text style={styles.timestamp}>
+                {new Date().toLocaleTimeString()}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor }]}>
       <TouchableOpacity
@@ -61,13 +162,15 @@ export default function FullscreenScreen() {
         <WebView
           source={{ uri: `http://${ipAddress}:81/stream` }}
           style={styles.webview}
+          injectedJavaScript={injectedJavaScript}
+          onMessage={(event) => {
+            if (event.nativeEvent.data === "stream-loaded") {
+              setIsLoading(false);
+            }
+          }}
           onLoadStart={() => {
             console.log("WebView: Chargement démarré");
             setIsLoading(true);
-          }}
-          onLoadEnd={() => {
-            console.log("WebView: Chargement terminé");
-            setIsLoading(false);
           }}
           onError={(syntheticEvent) => {
             const { nativeEvent } = syntheticEvent;
@@ -88,15 +191,14 @@ export default function FullscreenScreen() {
           incognito={true}
           androidLayerType="hardware"
           androidHardwareAccelerationDisabled={false}
-          renderLoading={() => (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#1a73e8" />
-              <Text style={styles.loadingText}>
-                Chargement du flux vidéo...
-              </Text>
-            </View>
-          )}
+          renderLoading={() => <View />}
         />
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#1a73e8" />
+            <Text style={styles.loadingText}>Chargement du flux vidéo...</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {showControls && (

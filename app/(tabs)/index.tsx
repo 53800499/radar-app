@@ -183,7 +183,7 @@ export default function AccueilScreen() {
               <Animated.View
                 style={[styles.liveDot, { opacity: liveDotOpacity }]}
               />
-              <Text style={styles.liveText}>Live Feed</Text>
+              <Text style={styles.liveText}>En direct</Text>
             </View>
             <TouchableOpacity
               style={styles.fullscreenButton}

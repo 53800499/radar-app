@@ -81,7 +81,6 @@ export default function AlertDetails() {
         title="Détails de l'alerte"
         subtitle="Informations complètes"
         showIcons={true}
-        titleAlign="flex-start"
       />
       <ScrollView style={styles.content}>
         <View style={styles.alertHeader}>

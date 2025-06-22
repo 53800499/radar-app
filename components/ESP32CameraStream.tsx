@@ -70,6 +70,18 @@ export const ESP32CameraStream: React.FC<ESP32CameraStreamProps> = ({
     setIsFullscreen(!isFullscreen);
   };
 
+  const injectedJavaScript = `
+    const img = document.querySelector('img');
+    if (img) {
+      img.onload = () => {
+        window.ReactNativeWebView.postMessage('stream-loaded');
+      };
+      if (img.complete) {
+        window.ReactNativeWebView.postMessage('stream-loaded');
+      }
+    }
+  `;
+
   return (
     <View style={[styles.container, isFullscreen && styles.fullscreen]}>
       {isLoading && (
@@ -91,6 +103,12 @@ export const ESP32CameraStream: React.FC<ESP32CameraStreamProps> = ({
             domStorageEnabled={true}
             startInLoadingState={true}
             scalesPageToFit={true}
+            injectedJavaScript={injectedJavaScript}
+            onMessage={(event) => {
+              if (event.nativeEvent.data === "stream-loaded") {
+                handleLoad();
+              }
+            }}
             onError={(syntheticEvent) => {
               const { nativeEvent } = syntheticEvent;
               console.log(
@@ -98,10 +116,6 @@ export const ESP32CameraStream: React.FC<ESP32CameraStreamProps> = ({
                 nativeEvent
               );
               handleError(syntheticEvent);
-            }}
-            onLoad={() => {
-              console.log("ESP32CameraStream: Chargement terminé");
-              handleLoad();
             }}
             onHttpError={(syntheticEvent) => {
               const { nativeEvent } = syntheticEvent;
@@ -116,16 +130,7 @@ export const ESP32CameraStream: React.FC<ESP32CameraStreamProps> = ({
             incognito={true}
             androidLayerType="hardware"
             androidHardwareAccelerationDisabled={false}
-            renderLoading={() => (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#1a73e8" />
-                <Text style={styles.loadingText}>
-                  {retryCount > 0
-                    ? `Tentative de reconnexion (${retryCount}/3)...`
-                    : "Connexion à la caméra..."}
-                </Text>
-              </View>
-            )}
+            renderLoading={() => <View />}
           />
           <TouchableOpacity
             style={styles.fullscreenButton}
