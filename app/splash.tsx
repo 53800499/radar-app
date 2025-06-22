@@ -35,7 +35,7 @@ const SplashScreen = () => {
       <View style={styles.overlay} />
       <View style={styles.container}>
         <Text style={styles.title}>
-          BoeufVisuel{"\n"}
+          RadarAPP{"\n"}
           <Text style={styles.titleHighlight}>Surveillance Intelligente</Text>
         </Text>
         <Text style={styles.subtitle}>

@@ -109,7 +109,7 @@ export default function AccueilScreen() {
   return (
     <View style={[styles.container, { backgroundColor }]}>
       <Header
-        title="Bienvenue sur Bieuf"
+        title="Bienvenue sur RadarAPP"
         subtitle="Explorez votre ferme"
         showIcons={true}
       />
@@ -126,7 +126,7 @@ export default function AccueilScreen() {
             colors={["#ffffff", "#f8f9fa"]}
             style={styles.infoCard}>
             <View style={styles.infoCardIconContainer}>
-              <Ionicons name="pulse-outline" size={35} color="#1a73e8" />
+              <Ionicons name="pulse-outline" size={30} color="#1a73e8" />
             </View>
             <Text style={styles.infoCardLabel}>Distance Actuelle</Text>
             <Text
@@ -142,7 +142,7 @@ export default function AccueilScreen() {
             colors={["#ffffff", "#f8f9fa"]}
             style={styles.infoCard}>
             <View style={styles.infoCardIconContainer}>
-              <Ionicons name="alert-circle-outline" size={35} color="#ea4335" />
+              <Ionicons name="alert-circle-outline" size={30} color="#ea4335" />
             </View>
             <Text style={styles.infoCardLabel}>Dernière Alerte</Text>
             <Text
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 25
+    paddingTop: 10
   },
   sectionTitle: {
     fontSize: 22,
@@ -253,13 +253,13 @@ const styles = StyleSheet.create({
   infoCardsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 30,
+    marginBottom: 10,
     gap: 15
   },
   infoCard: {
     flex: 1,
     borderRadius: 20,
-    padding: 20,
+    padding: 15,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -269,8 +269,8 @@ const styles = StyleSheet.create({
     elevation: 4
   },
   infoCardIconContainer: {
-    width: 60,
-    height: 60,
+    width: 35,
+    height: 35,
     borderRadius: 30,
     backgroundColor: "rgba(26, 115, 232, 0.1)",
     alignItems: "center",
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   infoCardValue: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "bold",
     marginTop: 8
   },

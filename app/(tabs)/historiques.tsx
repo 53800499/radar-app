@@ -18,6 +18,26 @@ import {
   View
 } from "react-native";
 
+const formatRelativeDate = (isoDate: string) => {
+  const date = new Date(isoDate);
+  const now = new Date();
+  const diffInSeconds = (now.getTime() - date.getTime()) / 1000;
+  const diffInDays = diffInSeconds / (60 * 60 * 24);
+
+  const timeFormat = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  if (diffInDays < 1 && now.getDate() === date.getDate()) {
+    return `Aujourd'hui à ${timeFormat.format(date)}`;
+  }
+  if (diffInDays < 2 && now.getDate() - 1 === date.getDate()) {
+    return `Hier à ${timeFormat.format(date)}`;
+  }
+  return `Le ${date.toLocaleDateString("fr-FR")} à ${timeFormat.format(date)}`;
+};
+
 const HistoriqueScreen = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,7 +87,7 @@ const HistoriqueScreen = () => {
         <Text style={styles.alertType}>
           {item.type === "supplis" ? "Supplis" : "Manque"}
         </Text>
-        <Text style={styles.alertDate}>{item.date}</Text>
+        <Text style={styles.alertDate}>{formatRelativeDate(item.date)}</Text>
       </View>
       <Text style={styles.alertMessage}>{item.message}</Text>
     </TouchableOpacity>
