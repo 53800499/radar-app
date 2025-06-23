@@ -3,23 +3,40 @@
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
 import { Alert, addAlert } from "./database";
-import {
-  NETWORK_CONFIG,
-  checkESP8266Connectivity,
-  getBaseUrl,
-  getWebSocketUrl
-} from "./networkConfig";
+import { ESP8266_BASE_URL, checkESP8266Connectivity } from "./networkConfig";
 import { sendAlertNotification } from "./notificationService";
 
 // Nom de la tâche en arrière-plan
 const BACKGROUND_FETCH_TASK = "background-fetch-task";
 
 // État de la connexion
-let ws: WebSocket | null = null;
+let isPolling = false;
+let pollingInterval: ReturnType<typeof setInterval> | null = null;
 let reconnectAttempts = 0;
-let isConnecting = false;
-let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-let isOfflineMode = NETWORK_CONFIG.OFFLINE_MODE.ENABLED;
+let isOfflineMode = false;
+
+// Variables pour le dédoublonnage des alertes
+let lastAlertMessage: string | null = null;
+let lastAlertTimestamp = 0;
+const ALERT_DEBOUNCE_TIME = 60 * 1000; // 1 minute
+
+// Interface pour les données radar
+interface RadarData {
+  angle: number;
+  distance: number;
+  objectCount: number;
+  timestamp: string;
+}
+
+// Interface pour les alertes radar
+interface RadarAlert {
+  type: string;
+  message: string;
+  timestamp: string;
+  objectCount: number;
+  expectedCount: number;
+  active: boolean;
+}
 
 // Définir la tâche en arrière-plan
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
@@ -52,6 +69,62 @@ export const registerBackgroundTask = async () => {
   }
 };
 
+// Récupérer les données radar actuelles
+export const fetchRadarData = async (): Promise<RadarData | null> => {
+  try {
+    const response = await fetch(`${ESP8266_BASE_URL}/radar`);
+    if (!response.ok) {
+      console.log("Erreur de réponse du serveur radar:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      console.log("Aucune donnée radar disponible");
+      return null;
+    }
+
+    return {
+      angle: data.angle,
+      distance: data.distance,
+      objectCount: data.objectCount,
+      timestamp: data.timestamp
+    };
+  } catch (error) {
+    console.log("Erreur lors de la récupération des données radar:", error);
+    return null;
+  }
+};
+
+// Récupérer la dernière alerte
+export const fetchLastAlert = async (): Promise<RadarAlert | null> => {
+  try {
+    const response = await fetch(`${ESP8266_BASE_URL}/alert`);
+
+    if (response.status === 404) {
+      return null; // Aucune alerte active
+    }
+
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
+
+    const alert = await response.json();
+    return {
+      type: alert.type,
+      message: alert.message,
+      timestamp: alert.timestamp,
+      objectCount: alert.objectCount,
+      expectedCount: alert.expectedCount,
+      active: alert.active
+    };
+  } catch (error) {
+    console.log("Erreur lors de la récupération de l'alerte:", error);
+    return null;
+  }
+};
+
 // Récupérer les alertes de l'ESP8266
 export const fetchAlertsFromESP8266 = async (): Promise<Alert[]> => {
   try {
@@ -65,35 +138,31 @@ export const fetchAlertsFromESP8266 = async (): Promise<Alert[]> => {
       }
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      NETWORK_CONFIG.ESP8266.HTTP_TIMEOUT
-    );
-
-    const response = await fetch(`${getBaseUrl()}/alerts`, {
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
+    const response = await fetch(`${ESP8266_BASE_URL}/alerts`);
     if (!response.ok) {
       throw new Error(`Erreur HTTP: ${response.status}`);
     }
 
-    const alerts = await response.json();
-    console.log(`${alerts.length} alertes récupérées`);
+    const data = await response.json();
+    const radarAlerts = data.alerts || [];
+    console.log(`${radarAlerts.length} alertes récupérées`);
 
-    // Sauvegarder les alertes localement
-    for (const alert of alerts) {
-      await addAlert({
-        type: alert.type,
-        message: alert.message,
+    const alerts: Alert[] = [];
+
+    // Convertir les alertes radar en alertes de l'application
+    for (const radarAlert of radarAlerts) {
+      const alert: Alert = {
+        type: radarAlert.type === "surplus" ? "surplus" : "manque",
+        message: radarAlert.message,
         date: new Date().toISOString(),
-        videoUri: alert.videoUri,
-        screenshotUri: alert.screenshotUri,
+        videoUri: null,
+        screenshotUri: null,
         read: false
-      });
+      };
+
+      // Sauvegarder l'alerte localement
+      await addAlert(alert);
+      alerts.push(alert);
     }
 
     // Si on a réussi à récupérer les alertes, on n'est plus en mode hors ligne
@@ -106,106 +175,167 @@ export const fetchAlertsFromESP8266 = async (): Promise<Alert[]> => {
   }
 };
 
-// Gérer la reconnexion WebSocket
-const handleReconnect = (connect: () => void) => {
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout);
-  }
+// Configurer les paramètres du radar
+export const configureRadar = async (params: {
+  expectedCount?: number;
+  detectionThreshold?: number;
+}): Promise<boolean> => {
+  try {
+    const response = await fetch(`${ESP8266_BASE_URL}/config`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(params)
+    });
 
-  if (reconnectAttempts < NETWORK_CONFIG.ESP8266.MAX_RECONNECT_ATTEMPTS) {
-    reconnectAttempts++;
-    console.log(
-      `Tentative de reconnexion ${reconnectAttempts}/${
-        NETWORK_CONFIG.ESP8266.MAX_RECONNECT_ATTEMPTS
-      } dans ${NETWORK_CONFIG.ESP8266.RECONNECT_DELAY / 1000}s`
-    );
-    reconnectTimeout = setTimeout(
-      connect,
-      NETWORK_CONFIG.ESP8266.RECONNECT_DELAY
-    );
-  } else {
-    console.log("Mode hors ligne - Maximum de tentatives atteint");
-    isOfflineMode = true;
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
+
+    console.log("Configuration radar mise à jour");
+    return true;
+  } catch (error) {
+    console.error("Erreur lors de la configuration du radar:", error);
+    return false;
   }
 };
 
-// Démarrer l'écoute des alertes
-export const startAlertListener = (onAlert: (alert: Alert) => void) => {
-  const connect = async () => {
-    if (
-      isConnecting ||
-      reconnectAttempts >= NETWORK_CONFIG.ESP8266.MAX_RECONNECT_ATTEMPTS
-    ) {
-      return;
+// Récupérer la configuration actuelle du radar
+export const getRadarConfig = async (): Promise<{
+  expectedCount: number;
+  detectionThreshold: number;
+} | null> => {
+  try {
+    const response = await fetch(`${ESP8266_BASE_URL}/config`);
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
     }
 
-    isConnecting = true;
+    const config = await response.json();
+    return {
+      expectedCount: config.expectedCount,
+      detectionThreshold: config.detectionThreshold
+    };
+  } catch (error) {
+    console.error("Erreur lors de la récupération de la configuration:", error);
+    return null;
+  }
+};
 
-    // Vérifier la connectivité si on n'est pas en mode hors ligne
-    if (!isOfflineMode) {
+// Réinitialiser les alertes
+export const resetAlerts = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${ESP8266_BASE_URL}/reset`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
+
+    console.log("Alertes réinitialisées");
+    return true;
+  } catch (error) {
+    console.error("Erreur lors de la réinitialisation des alertes:", error);
+    return false;
+  }
+};
+
+// Démarrer l'écoute des alertes (polling)
+export const startAlertListener = (onAlert: (alert: Alert) => void) => {
+  if (isPolling) {
+    console.log("L'écoute des alertes est déjà active");
+    return;
+  }
+
+  isPolling = true;
+  console.log("Démarrage de l'écoute des alertes...");
+
+  const pollAlerts = async () => {
+    try {
+      // Vérifier la connectivité
       const isConnected = await checkESP8266Connectivity();
       if (!isConnected) {
-        console.log("Passage en mode hors ligne - ESP8266 non accessible");
+        console.log("ESP8266 non accessible, passage en mode hors ligne");
         isOfflineMode = true;
-        isConnecting = false;
-        handleReconnect(connect);
         return;
       }
-    }
 
-    try {
-      console.log("Tentative de connexion WebSocket...");
-      ws = new WebSocket(getWebSocketUrl());
+    isOfflineMode = false;
 
-      ws.onopen = () => {
-        console.log("WebSocket connecté");
-        isConnecting = false;
-        reconnectAttempts = 0;
-        isOfflineMode = false;
-      };
+        // Récupérer la dernière alerte
+        const radarAlert = await fetchLastAlert();
 
-      ws.onmessage = async (event) => {
-        try {
-          const alert = JSON.parse(event.data) as Alert;
-          onAlert(alert);
+        if (radarAlert && radarAlert.active) {
+          const currentTime = Date.now();
+          const currentMessage = radarAlert.message;
 
-          // Envoyer une notification pour l'alerte
-          await sendAlertNotification(alert.type, alert.message);
-        } catch (error) {
-          console.error("Erreur lors du traitement de l'alerte:", error);
+          // Si le message est différent OU si plus d'une minute s'est écoulée
+          if (
+            currentMessage !== lastAlertMessage ||
+            currentTime - lastAlertTimestamp > ALERT_DEBOUNCE_TIME
+          ) {
+            // Mettre à jour le suivi pour le dédoublonnage
+            lastAlertMessage = currentMessage;
+            lastAlertTimestamp = currentTime;
+
+            // Créer une alerte pour l'application
+            const alert: Alert = {
+              type: radarAlert.type,
+              message: radarAlert.message,
+              date: new Date().toISOString(),
+              videoUri: null,
+              screenshotUri: null,
+              read: false
+            };
+
+            // Sauvegarder l'alerte localement
+            await addAlert(alert);
+
+            // Notifier l'application
+            onAlert(alert);
+
+            // Envoyer une notification
+            await sendAlertNotification(alert.type, alert.message);
+          } else {
+            // Message identique en moins d'une minute, on l'ignore
+            console.log(
+              `[Debounce] Alerte ignorée (identique): "${currentMessage}"`
+            );
+          }
+        } else {
+          // Pas d'alerte active, on réinitialise le suivi
+          lastAlertMessage = null;
         }
-      };
-
-      ws.onerror = (error) => {
-        console.error("Erreur WebSocket:", error);
-        isConnecting = false;
-        handleReconnect(connect);
-      };
-
-      ws.onclose = () => {
-        console.log("WebSocket déconnecté");
-        // Tentative de reconnexion après un délai
-        setTimeout(() => startAlertListener(onAlert), 5000);
-      };
     } catch (error) {
-      console.error("Erreur de création WebSocket:", error);
-      isConnecting = false;
-      handleReconnect(connect);
+      console.error("Erreur lors du polling des alertes:", error);
     }
   };
 
-  // Démarrer la connexion
-  connect();
+  // Polling toutes les 2 secondes
+  pollingInterval = setInterval(pollAlerts, 2000);
 
-  // Nettoyage
+  // Première vérification immédiate
+  pollAlerts();
+
+  // Fonction de nettoyage
   return () => {
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
     }
-    if (ws) {
-      ws.close();
-    }
-    isConnecting = false;
-    reconnectAttempts = 0;
+    isPolling = false;
+    console.log("Écoute des alertes arrêtée");
   };
+};
+
+// Arrêter l'écoute des alertes
+export const stopAlertListener = () => {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+  isPolling = false;
+  console.log("Écoute des alertes arrêtée");
 };

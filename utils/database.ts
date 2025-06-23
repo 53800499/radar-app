@@ -107,6 +107,19 @@ export const getAlerts = async (): Promise<Alert[]> => {
   return rows.map((row) => ({ ...row, read: Boolean(row.read) }));
 };
 
+// 🟢 Compter les alertes non lues
+export const getUnreadAlertsCount = async (): Promise<number> => {
+  try {
+    const result = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) as count FROM alerts WHERE read = 0;`
+    );
+    return result?.count ?? 0;
+  } catch (e) {
+    console.error("Error counting unread alerts:", e);
+    return 0;
+  }
+};
+
 // 🟢 Récupérer une alerte par ID
 export const getAlertById = async (id: number): Promise<Alert | null> => {
   const row = await db.getFirstAsync<Alert>(

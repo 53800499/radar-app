@@ -7,7 +7,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const styles = StyleSheet.create({
   header: {
-    paddingTop: 50,
+    paddingTop: 40,
     flexDirection: "row",
     paddingHorizontal: 20,
     paddingVertical: 15,
@@ -58,6 +58,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center"
   },
+  badgeContainer: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    backgroundColor: "#e74c3c",
+    borderRadius: 12,
+    minWidth: 22,
+    height: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#f5f5f5"
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold"
+  },
   backButton: {
     flexDirection: "row",
     alignItems: "center"
@@ -77,8 +95,10 @@ interface HeaderProps {
   subtitle?: string;
   showIcons?: boolean;
   showBackButton?: boolean;
+  onDeleteAll?: () => void;
   leftContent?: React.ReactNode;
   rightContent?: React.ReactNode;
+  notificationCount?: number;
 }
 
 export default function Header({
@@ -86,8 +106,10 @@ export default function Header({
   subtitle,
   showIcons = true,
   showBackButton = false,
+  onDeleteAll,
   leftContent,
-  rightContent
+  rightContent,
+  notificationCount = 0
 }: HeaderProps) {
   const router = useRouter();
 
@@ -114,15 +136,26 @@ export default function Header({
       <View style={styles.rightSection}>
         {showIcons && !rightContent && (
           <View style={styles.iconContainer}>
-            <TouchableOpacity style={styles.iconBackground}>
-              <Ionicons name="add-outline" size={20} color="#1a73e8" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBackground}>
+            {onDeleteAll && (
+              <TouchableOpacity
+                style={styles.iconBackground}
+                onPress={onDeleteAll}>
+                <Ionicons name="trash-outline" size={20} color="#e74c3c" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.iconBackground}
+              onPress={() => router.push("/(tabs)/historiques")}>
               <Ionicons
                 name="notifications-outline"
                 size={20}
                 color="#1a73e8"
               />
+              {notificationCount > 0 && (
+                <View style={styles.badgeContainer}>
+                  <Text style={styles.badgeText}>{notificationCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         )}

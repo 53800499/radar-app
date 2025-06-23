@@ -1,16 +1,21 @@
 /** @format */
 
 import Header from "@/components/Header";
-import { Alert, getAlerts } from "@/utils/database";
 import {
-  fetchAlertsFromESP8266,
-  startAlertListener
-} from "@/utils/esp8266Service";
+  Alert as AlertType,
+  deleteAlertById,
+  deleteAllAlerts,
+  getAlerts,
+  getUnreadAlertsCount
+} from "@/utils/database";
+import { startAlertListener } from "@/utils/esp8266Service";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
   RefreshControl,
+  Alert as RNAlert,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -39,16 +44,18 @@ const formatRelativeDate = (isoDate: string) => {
 };
 
 const HistoriqueScreen = () => {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const loadAlerts = useCallback(async () => {
     try {
       setIsLoading(true);
       const localAlerts = await getAlerts();
-      const esp8266Alerts = await fetchAlertsFromESP8266();
-      setAlerts([...esp8266Alerts, ...localAlerts]);
+      const count = await getUnreadAlertsCount();
+      setAlerts(localAlerts);
+      setUnreadCount(count);
     } catch (error) {
       console.error("Erreur lors du chargement des alertes:", error);
     } finally {
@@ -69,28 +76,74 @@ const HistoriqueScreen = () => {
     }, [loadAlerts])
   );
 
+  const handleDelete = (id: number) => {
+    RNAlert.alert(
+      "Supprimer l'alerte",
+      "Êtes-vous sûr de vouloir supprimer cette alerte ? Cette action est irréversible.",
+      [
+        {
+          text: "Annuler",
+          style: "cancel"
+        },
+        {
+          text: "Supprimer",
+          style: "destructive",
+          onPress: async () => {
+            await deleteAlertById(id);
+            loadAlerts();
+          }
+        }
+      ]
+    );
+  };
+
+  const handleClearAll = () => {
+    RNAlert.alert(
+      "Vider l'historique",
+      "Êtes-vous sûr de vouloir supprimer toutes les alertes ? Cette action est irréversible.",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Tout supprimer",
+          style: "destructive",
+          onPress: async () => {
+            await deleteAllAlerts();
+            loadAlerts(); // Recharger pour voir la liste vide
+          }
+        }
+      ]
+    );
+  };
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadAlerts();
     setRefreshing(false);
   }, [loadAlerts]);
 
-  const renderAlertItem = ({ item }: { item: Alert }) => (
-    <TouchableOpacity
-      style={[styles.alertItem, !item.read && styles.unreadAlert]}
-      onPress={() => {
-        if (item.id) {
-          router.push(`/alert-detail/${item.id}`);
-        }
-      }}>
-      <View style={styles.alertHeader}>
-        <Text style={styles.alertType}>
-          {item.type === "supplis" ? "Supplis" : "Manque"}
-        </Text>
-        <Text style={styles.alertDate}>{formatRelativeDate(item.date)}</Text>
-      </View>
-      <Text style={styles.alertMessage}>{item.message}</Text>
-    </TouchableOpacity>
+  const renderAlertItem = ({ item }: { item: AlertType }) => (
+    <View style={styles.alertItemContainer}>
+      <TouchableOpacity
+        style={[styles.alertItem, !item.read && styles.unreadAlert]}
+        onPress={() => {
+          if (item.id) {
+            router.push(`/alert-detail/${item.id}`);
+          }
+        }}>
+        <View style={styles.alertHeader}>
+          <Text style={styles.alertType}>
+            {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+          </Text>
+          <Text style={styles.alertDate}>{formatRelativeDate(item.date)}</Text>
+        </View>
+        <Text style={styles.alertMessage}>{item.message}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => item.id && handleDelete(item.id)}>
+        <Ionicons name="trash-bin-outline" size={24} color="#e74c3c" />
+      </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -99,11 +152,13 @@ const HistoriqueScreen = () => {
         title="Historique des alertes"
         subtitle="Consultez l'historique complet"
         showIcons={true}
+        notificationCount={unreadCount}
+        onDeleteAll={handleClearAll}
       />
       <FlatList
         data={alerts}
         renderItem={renderAlertItem}
-        keyExtractor={(item) => item.date}
+        keyExtractor={(item) => item.id?.toString() ?? item.date}
         contentContainerStyle={styles.listContainer}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -136,7 +191,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    flex: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -176,5 +231,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
     textAlign: "center"
+  },
+  alertItemContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12
+  },
+  deleteButton: {
+    marginLeft: 10,
+    padding: 10,
+    borderRadius: 50,
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2
   }
 });

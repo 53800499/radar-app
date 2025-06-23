@@ -3,12 +3,20 @@ import { ESP32CameraStream } from "@/components/ESP32CameraStream";
 import Header from "@/components/Header";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { getUnreadAlertsCount } from "@/utils/database";
+import {
+  configureRadar,
+  fetchRadarData,
+  getRadarConfig,
+  startAlertListener
+} from "@/utils/esp8266Service";
+import { ESP32_CAM_IP } from "@/utils/networkConfig";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -16,49 +24,31 @@ import {
   View
 } from "react-native";
 
-
 export default function AccueilScreen() {
   const [distance, setDistance] = useState(120);
-  const [derniereAlerte, setDerniereAlerte] = useState("Aucune alerte récente");
+  const [objectCount, setObjectCount] = useState(0);
+  const [expectedCount, setExpectedCount] = useState(2);
+  const [radarStatus, setRadarStatus] = useState("Connexion...");
   const liveDotOpacity = useRef(new Animated.Value(1)).current;
-  const [ipAddress, setIpAddress] = useState("192.168.46.240");
+  const [ipAddress, setIpAddress] = useState(ESP32_CAM_IP);
   const [isStreaming, setIsStreaming] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const colorScheme = useColorScheme();
   const backgroundColor = Colors[colorScheme ?? "light"].background;
   const textColor = Colors[colorScheme ?? "light"].text;
   const router = useRouter();
 
-  // Animation pour les cartes
   const cardScale = useRef(new Animated.Value(0.95)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Animation d'entrée des cartes
-    Animated.parallel([
-      Animated.timing(cardScale, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true
-      }),
-      Animated.timing(cardOpacity, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true
-      })
-    ]).start();
-
-    const interval = setInterval(() => {
-      const nouvelleDistance = Math.floor(Math.random() * 150 + 30);
-      setDistance(nouvelleDistance);
-      setDerniereAlerte(calculerAlerte(nouvelleDistance));
-    }, 5000);
-
-    Animated.loop(
+    const animateLiveDot = () => {
       Animated.sequence([
         Animated.timing(liveDotOpacity, {
-          toValue: 0.2,
+          toValue: 0.3,
           duration: 1000,
           useNativeDriver: true
         }),
@@ -67,26 +57,86 @@ export default function AccueilScreen() {
           duration: 1000,
           useNativeDriver: true
         })
-      ])
-    ).start();
+      ]).start(() => animateLiveDot());
+    };
+    animateLiveDot();
+  }, [liveDotOpacity]);
 
-    return () => clearInterval(interval);
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(cardScale, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true
+      }),
+      Animated.timing(cardOpacity, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [cardScale, cardOpacity]);
+
+  useEffect(() => {
+    const initializeRadar = async () => {
+      try {
+        const config = await getRadarConfig();
+        if (config) {
+          setExpectedCount(config.expectedCount);
+        }
+        const count = await getUnreadAlertsCount();
+        setUnreadCount(count);
+
+        const stopListener = startAlertListener(async (alert) => {
+          console.log("Nouvelle alerte reçue:", alert);
+          const newCount = await getUnreadAlertsCount();
+          setUnreadCount(newCount);
+        });
+
+        const radarInterval = setInterval(async () => {
+          try {
+            const radarData = await fetchRadarData();
+            if (radarData) {
+              setDistance(radarData.distance);
+              setObjectCount(radarData.objectCount);
+              setRadarStatus("Connecté");
+            } else {
+              setRadarStatus("Aucune donnée");
+            }
+          } catch (error) {
+            console.log(
+              "Erreur lors de la récupération des données radar:",
+              error
+            );
+            setRadarStatus("Erreur");
+          }
+        }, 3000);
+
+        return () => {
+          if (stopListener) {
+            stopListener();
+          }
+          clearInterval(radarInterval);
+        };
+      } catch (error) {
+        console.error("Erreur lors de l'initialisation du radar:", error);
+        setRadarStatus("Erreur de connexion");
+      }
+    };
+
+    initializeRadar();
   }, []);
 
-  const calculerAlerte = (dist: number) => {
-    if (dist < 50) return `Bœuf très proche à ${dist} cm !`;
-    if (dist < 100) return `Attention, bœuf proche à ${dist} cm.`;
-    return "Aucune alerte récente";
-  };
-
   const getDistanceValueColor = () => {
-    if (distance < 50) return "#ea4335";
-    if (distance < 100) return "#fb662d";
-    return "#1a73e8";
+    if (distance < 50) return "#e74c3c";
+    if (distance < 100) return "#f39c12";
+    return "#27ae60";
   };
 
-  const getAlerteValueColor = () => {
-    return derniereAlerte !== "Aucune alerte récente" ? "#ea4335" : "#34a853";
+  const getObjectCountColor = () => {
+    if (objectCount > expectedCount) return "#e74c3c"; // Rouge pour surplus
+    if (objectCount < expectedCount) return "#f39c12"; // Orange pour manque
+    return "#27ae60"; // Vert pour normal
   };
 
   const handleStreamError = (error: string) => {
@@ -95,8 +145,8 @@ export default function AccueilScreen() {
   };
 
   const handleStreamLoad = () => {
-    setIsLoading(false);
     setError(null);
+    setIsLoading(false);
   };
 
   const handleFullscreen = () => {
@@ -106,52 +156,94 @@ export default function AccueilScreen() {
     });
   };
 
+  const handleRefresh = () => {
+    setError(null);
+    setIsLoading(true);
+    setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleConfigureRadar = async () => {
+    try {
+      const success = await configureRadar({
+        expectedCount: expectedCount,
+        detectionThreshold: 30
+      });
+
+      if (success) {
+        console.log("Configuration radar mise à jour");
+      } else {
+        console.log("Erreur lors de la configuration du radar");
+      }
+    } catch (error) {
+      console.error("Erreur lors de la configuration:", error);
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor }]}>
+    <View style={styles.container}>
       <Header
-        title="Bienvenue sur RadarAPP"
-        subtitle="Explorez votre ferme"
-        showIcons={true}
+        title="Surveillance Bétail"
+        subtitle="Contrôle en temps réel"
+        notificationCount={unreadCount}
       />
-      <View style={styles.contentContainer}>
-        <Animated.View
-          style={[
-            styles.infoCardsContainer,
-            {
-              opacity: cardOpacity,
-              transform: [{ scale: cardScale }]
-            }
-          ]}>
-          <LinearGradient
-            colors={["#ffffff", "#f8f9fa"]}
-            style={styles.infoCard}>
-            <View style={styles.infoCardIconContainer}>
-              <Ionicons name="pulse-outline" size={30} color="#1a73e8" />
-            </View>
-            <Text style={styles.infoCardLabel}>Distance Actuelle</Text>
-            <Text
+      <ScrollView style={styles.contentContainer}>
+        {/* Section Radar (Nouveau Design) */}
+        <View style={styles.radarSectionContainer}>
+          <Text style={styles.sectionTitle}>Données du Radar</Text>
+          <View style={styles.infoCardsContainer}>
+            <Animated.View
               style={[
-                styles.infoCardValue,
-                { color: getDistanceValueColor() }
+                styles.infoCard,
+                { opacity: cardOpacity, transform: [{ scale: cardScale }] }
               ]}>
-              {distance} cm
-            </Text>
-          </LinearGradient>
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name="resize"
+                  size={24}
+                  color={getDistanceValueColor()}
+                />
+                <Text style={styles.infoCardLabel}>Distance</Text>
+              </View>
+              <Text
+                style={[
+                  styles.infoCardValue,
+                  { color: getDistanceValueColor() }
+                ]}>
+                {distance} <Text style={styles.unitText}>cm</Text>
+              </Text>
+            </Animated.View>
 
-          <LinearGradient
-            colors={["#ffffff", "#f8f9fa"]}
-            style={styles.infoCard}>
-            <View style={styles.infoCardIconContainer}>
-              <Ionicons name="alert-circle-outline" size={30} color="#ea4335" />
-            </View>
-            <Text style={styles.infoCardLabel}>Dernière Alerte</Text>
-            <Text
-              style={[styles.infoCardValue, { color: getAlerteValueColor() }]}>
-              {derniereAlerte}
-            </Text>
-          </LinearGradient>
-        </Animated.View>
+            <Animated.View
+              style={[
+                styles.infoCard,
+                { opacity: cardOpacity, transform: [{ scale: cardScale }] }
+              ]}>
+              <View style={styles.cardHeader}>
+                <Ionicons
+                  name="layers-outline"
+                  size={24}
+                  color={getObjectCountColor()}
+                />
+                <Text style={styles.infoCardLabel}>Objets Détectés</Text>
+              </View>
+              <Text
+                style={[
+                  styles.infoCardValue,
+                  { color: getObjectCountColor() }
+                ]}>
+                {objectCount} / {expectedCount}
+              </Text>
+            </Animated.View>
+          </View>
+          <View style={styles.radarStatusContainer}>
+            <Animated.View
+              style={[styles.liveDot, { opacity: liveDotOpacity }]}
+            />
+            <Text style={styles.radarStatusText}>Statut: {radarStatus}</Text>
+          </View>
+        </View>
 
+        {/* Section Caméra (Ancien Design) */}
         <Text style={styles.sectionTitle}>Caméra de Surveillance</Text>
         <Animated.View
           style={[
@@ -169,10 +261,17 @@ export default function AccueilScreen() {
                 Vérifiez que votre ESP32-CAM est bien connecté et que l{"'"}
                 adresse IP est correcte
               </Text>
+              <TouchableOpacity
+                style={styles.refreshButton}
+                onPress={handleRefresh}>
+                <Ionicons name="refresh" size={20} color="#fff" />
+                <Text style={styles.refreshButtonText}>Rafraîchir</Text>
+              </TouchableOpacity>
             </View>
           )}
           {!error && (
             <ESP32CameraStream
+              key={refreshKey}
               ipAddress={ipAddress}
               onError={handleStreamError}
               onLoad={handleStreamLoad}
@@ -185,12 +284,19 @@ export default function AccueilScreen() {
               />
               <Text style={styles.liveText}>En direct</Text>
             </View>
-            <TouchableOpacity
-              style={styles.fullscreenButton}
-              onPress={handleFullscreen}>
-              <Ionicons name="expand-outline" size={24} color="#fff" />
-              <Text style={styles.fullscreenButtonText}>Plein écran</Text>
-            </TouchableOpacity>
+            <View style={styles.overlayButtons}>
+              <TouchableOpacity
+                style={styles.refreshOverlayButton}
+                onPress={handleRefresh}>
+                <Ionicons name="refresh" size={20} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.fullscreenButton}
+                onPress={handleFullscreen}>
+                <Ionicons name="expand-outline" size={24} color="#fff" />
+                <Text style={styles.fullscreenButtonText}>Plein écran</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </Animated.View>
 
@@ -227,7 +333,31 @@ export default function AccueilScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+
+        {/* Configuration du radar */}
+        <View style={styles.radarConfigContainer}>
+          <Text style={styles.configTitle}>Configuration Radar</Text>
+          <View style={styles.configRow}>
+            <Text style={styles.configLabel}>Objets attendus:</Text>
+            <TextInput
+              style={styles.configInput}
+              value={expectedCount.toString()}
+              onChangeText={(text) => {
+                const value = parseInt(text) || 2;
+                setExpectedCount(value);
+              }}
+              keyboardType="numeric"
+              placeholder="2"
+            />
+            <TouchableOpacity
+              style={styles.configButton}
+              onPress={handleConfigureRadar}>
+              <Ionicons name="save" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.radarStatus}>Statut: {radarStatus}</Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -240,7 +370,8 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 10
+    paddingTop: 10,
+    paddingBottom: 20
   },
   sectionTitle: {
     fontSize: 22,
@@ -250,50 +381,75 @@ const styles = StyleSheet.create({
     marginTop: 15,
     textAlign: "left"
   },
+  // Nouveaux styles pour la section radar
+  radarSectionContainer: {
+    marginBottom: 30
+  },
   infoCardsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
     gap: 15
   },
   infoCard: {
-    flex: 1,
-    borderRadius: 20,
+    backgroundColor: "#fff",
+    borderRadius: 15,
     padding: 15,
-    alignItems: "center",
-    justifyContent: "center",
+    width: "48%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4
+    shadowRadius: 10,
+    elevation: 5,
+    alignItems: "center"
   },
-  infoCardIconContainer: {
-    width: 35,
-    height: 35,
-    borderRadius: 30,
-    backgroundColor: "rgba(26, 115, 232, 0.1)",
+  cardHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10
+    marginBottom: 1
   },
   infoCardLabel: {
-    fontSize: 15,
+    fontSize: 16,
     color: "#7f8c8d",
-    marginTop: 10,
-    textAlign: "center"
+    marginLeft: 8,
+    fontWeight: "600"
   },
   infoCardValue: {
-    fontSize: 18,
+    fontSize: 28,
     fontWeight: "bold",
-    marginTop: 8
+    textAlign: "center"
   },
+  unitText: {
+    fontSize: 16,
+    fontWeight: "normal",
+    color: "#7f8c8d"
+  },
+  radarStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 3
+  },
+  radarStatusText: {
+    fontSize: 16,
+    color: "#34495e"
+  },
+  // Fin des nouveaux styles
+
   cameraCard: {
     flex: 1,
     backgroundColor: "#ffffff",
     borderRadius: 20,
     overflow: "hidden",
-    marginBottom: 20,
+    marginBottom: 25,
+    minHeight: 220,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
@@ -307,7 +463,7 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 15,
+    padding: 10,
     backgroundColor: "rgba(0, 0, 0, 0.3)"
   },
   liveIndicator: {
@@ -329,6 +485,16 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
     fontWeight: "600"
+  },
+  overlayButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  refreshOverlayButton: {
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    padding: 8,
+    borderRadius: 20
   },
   fullscreenButton: {
     flexDirection: "row",
@@ -363,8 +529,28 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: "center"
   },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1a73e8",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    marginTop: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  refreshButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8
+  },
   inputContainer: {
-    marginBottom: 20
+    marginBottom: 25
   },
   inputWrapper: {
     flexDirection: "row",
@@ -406,5 +592,54 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600"
+  },
+  radarConfigContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  configTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#2c3e50",
+    marginBottom: 15
+  },
+  configRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15
+  },
+  configLabel: {
+    fontSize: 16,
+    color: "#666",
+    marginRight: 10,
+    flex: 1
+  },
+  configInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    width: 60,
+    textAlign: "center",
+    marginRight: 10
+  },
+  configButton: {
+    backgroundColor: "#1a73e8",
+    padding: 8,
+    borderRadius: 8
+  },
+  radarStatus: {
+    fontSize: 14,
+    color: "#666",
+    fontStyle: "italic"
   }
 });

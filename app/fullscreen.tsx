@@ -24,6 +24,7 @@ export default function FullscreenScreen() {
   const [showControls, setShowControls] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -49,6 +50,11 @@ export default function FullscreenScreen() {
     setIsPaused(!isPaused);
   };
 
+  const handleRefresh = () => {
+    setIsLoading(true);
+    setRefreshKey((prev) => prev + 1);
+  };
+
   const injectedJavaScript = `
     const img = document.querySelector('img');
     if (img) {
@@ -64,91 +70,14 @@ export default function FullscreenScreen() {
   if (!ipAddress) {
     return (
       <View style={[styles.container, { backgroundColor }]}>
-        <TouchableOpacity
-          style={styles.videoContainer}
-          activeOpacity={1}
-          onPress={handleScreenPress}>
-          <WebView
-            source={{ uri: `http://${ipAddress}:81/stream` }}
-            style={styles.webview}
-            injectedJavaScript={injectedJavaScript}
-            onMessage={(event) => {
-              if (event.nativeEvent.data === "stream-loaded") {
-                setIsLoading(false);
-              }
-            }}
-            onLoadStart={() => {
-              console.log("WebView: Chargement démarré");
-              setIsLoading(true);
-            }}
-            onError={(syntheticEvent) => {
-              const { nativeEvent } = syntheticEvent;
-              console.log("WebView: Erreur de chargement", nativeEvent);
-              setIsLoading(false);
-            }}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-            scalesPageToFit={true}
-            mediaPlaybackRequiresUserAction={false}
-            allowsFullscreenVideo={true}
-            allowsInlineMediaPlayback={true}
-            onShouldStartLoadWithRequest={() => true}
-            originWhitelist={["*"]}
-            mixedContentMode="always"
-            cacheEnabled={false}
-            incognito={true}
-            androidLayerType="hardware"
-            androidHardwareAccelerationDisabled={false}
-            renderLoading={() => <View />}
-          />
-          {isLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#1a73e8" />
-              <Text style={styles.loadingText}>
-                Chargement du flux vidéo...
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {showControls && (
-          <View style={styles.controlsOverlay}>
-            <View style={styles.topControls}>
-              <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-                <Ionicons name="arrow-back" size={28} color="#fff" />
-              </TouchableOpacity>
-              <Text style={styles.title}>Surveillance en direct</Text>
-            </View>
-
-            <View style={styles.centerControls}>
-              <TouchableOpacity
-                style={styles.controlButton}
-                onPress={togglePause}>
-                <Ionicons
-                  name={isPaused ? "play" : "pause"}
-                  size={32}
-                  color="#fff"
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.bottomControls}>
-              <TouchableOpacity
-                style={styles.controlButton}
-                onPress={toggleMute}>
-                <Ionicons
-                  name={isMuted ? "volume-mute" : "volume-high"}
-                  size={24}
-                  color="#fff"
-                />
-              </TouchableOpacity>
-              <Text style={styles.timestamp}>
-                {new Date().toLocaleTimeString()}
-              </Text>
-            </View>
-          </View>
-        )}
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={60} color="#ea4335" />
+          <Text style={styles.errorText}>Adresse IP manquante</Text>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={28} color="#fff" />
+            <Text style={styles.backButtonText}>Retour</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -160,6 +89,7 @@ export default function FullscreenScreen() {
         activeOpacity={1}
         onPress={handleScreenPress}>
         <WebView
+          key={refreshKey}
           source={{ uri: `http://${ipAddress}:81/stream` }}
           style={styles.webview}
           injectedJavaScript={injectedJavaScript}
@@ -229,6 +159,11 @@ export default function FullscreenScreen() {
                 size={24}
                 color="#fff"
               />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={handleRefresh}>
+              <Ionicons name="refresh" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.timestamp}>
               {new Date().toLocaleTimeString()}
@@ -307,6 +242,23 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center"
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#000"
+  },
+  errorText: {
+    color: "#fff",
+    fontSize: 18,
+    marginTop: 20,
+    textAlign: "center"
+  },
+  backButtonText: {
+    color: "#fff",
+    marginLeft: 8,
+    fontSize: 16
   },
   timestamp: {
     color: "#fff",
