@@ -4,7 +4,7 @@
 // --- Configuration des adresses IP ---
 // Remplacez ces adresses par celles de vos ESP
 export const ESP8266_IP = "192.168.186.240"; // Adresse de l'ESP8266 pour le radar
-export const ESP32_CAM_IP = "192.168.46.240"; // Adresse de l'ESP32-CAM pour la vidéo
+export const ESP32_CAM_IP = "10.58.156.208"; // Adresse de l'ESP32-CAM pour la vidéo
 
 // URL de base pour les API
 export const ESP8266_BASE_URL = `http://${ESP8266_IP}`;

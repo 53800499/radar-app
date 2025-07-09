@@ -33,7 +33,7 @@ export default function SupportScreen() {
     {
       question: "L'application ne se connecte pas à la caméra",
       answer:
-        "Vérifiez que :\n• L'ESP32-CAM est allumé\n• Vous êtes sur le même réseau WiFi\n• L'adresse IP est correcte dans les paramètres\n• Le port 81 est accessible"
+        "Vérifiez que :\n• L'ESP32-CAM est allumé\n• Vous êtes sur le même réseau WiFi\n• L'adresse IP est correcte dans les paramètres\n• Le port 80 est accessible"
     },
     {
       question: "Comment mettre à jour l'application ?",

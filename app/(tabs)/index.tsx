@@ -189,7 +189,15 @@ export default function AccueilScreen() {
       <ScrollView style={styles.contentContainer}>
         {/* Section Radar (Nouveau Design) */}
         <View style={styles.radarSectionContainer}>
-          <Text style={styles.sectionTitle}>Données du Radar</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Données du Radar</Text>
+            <TouchableOpacity
+              style={styles.radarVisualizationButton}
+              onPress={() => router.push("/radar-visualization")}>
+              <Ionicons name="compass-outline" size={20} color="#1a73e8" />
+              <Text style={styles.radarVisualizationText}>Visualisation</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.infoCardsContainer}>
             <Animated.View
               style={[
@@ -332,6 +340,184 @@ export default function AccueilScreen() {
               {isStreaming ? "Arrêter" : "Démarrer"} le flux
             </Text>
           </TouchableOpacity>
+
+          {/* Bouton de test de connectivité */}
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: "#1a73e8", marginTop: 10 }
+            ]}
+            onPress={async () => {
+              try {
+                const response = await fetch(`http://${ipAddress}/status`);
+                if (response.ok) {
+                  console.log("ESP32-CAM connecté !");
+                  alert("ESP32-CAM connecté avec succès !");
+                } else {
+                  console.log(
+                    "ESP32-CAM répond mais avec erreur:",
+                    response.status
+                  );
+                  alert(
+                    `ESP32-CAM répond mais avec erreur: ${response.status}`
+                  );
+                }
+              } catch (error) {
+                console.log("Erreur de connexion ESP32-CAM:", error);
+                alert(
+                  "Erreur de connexion ESP32-CAM. Vérifiez l'adresse IP et la connexion WiFi."
+                );
+              }
+            }}>
+            <Ionicons
+              name="wifi"
+              size={20}
+              color="#fff"
+              style={styles.buttonIcon}
+            />
+            <Text style={styles.buttonText}>Tester la connexion</Text>
+          </TouchableOpacity>
+
+          {/* Bouton de test de connectivité ESP8266 */}
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: "#27ae60", marginTop: 10 }
+            ]}
+            onPress={async () => {
+              try {
+                console.log("Test de connexion ESP8266...");
+                console.log("URL testée:", "http://192.168.186.240/status");
+
+                const response = await fetch("http://192.168.186.240/status", {
+                  method: "GET"
+                });
+
+                if (response.ok) {
+                  const data = await response.json();
+                  console.log("ESP8266 connecté !", data);
+                  alert(
+                    `ESP8266 connecté avec succès !\nIP: ${data.ip}\nRSSI: ${
+                      data.rssi
+                    } dBm\nMode: ${data.mode || "N/A"}`
+                  );
+                } else {
+                  console.log(
+                    "ESP8266 répond mais avec erreur:",
+                    response.status
+                  );
+                  alert(`ESP8266 répond mais avec erreur: ${response.status}`);
+                }
+              } catch (error) {
+                console.log("Erreur de connexion ESP8266:", error);
+                console.log(
+                  "Type d'erreur:",
+                  error instanceof Error ? error.constructor.name : typeof error
+                );
+                console.log(
+                  "Message d'erreur:",
+                  error instanceof Error ? error.message : String(error)
+                );
+
+                let errorMessage =
+                  "Erreur de connexion ESP8266.\n\nVérifiez:\n";
+                errorMessage += "1. L'ESP8266 est alimenté\n";
+                errorMessage += "2. Il est connecté au WiFi\n";
+                errorMessage += "3. L'adresse IP est correcte\n";
+                errorMessage += "4. Votre téléphone est sur le même réseau\n";
+                errorMessage += "5. Le serveur web Arduino est démarré\n\n";
+                errorMessage += `Erreur: ${
+                  error instanceof Error ? error.message : String(error)
+                }`;
+
+                alert(errorMessage);
+              }
+            }}>
+            <Ionicons
+              name="compass"
+              size={20}
+              color="#fff"
+              style={styles.buttonIcon}
+            />
+            <Text style={styles.buttonText}>Tester ESP8266</Text>
+          </TouchableOpacity>
+
+          {/* Bouton de diagnostic complet ESP8266 */}
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: "#9b59b6", marginTop: 10 }
+            ]}
+            onPress={() => router.push("/esp8266-diagnostic")}>
+            <Ionicons
+              name="medical"
+              size={20}
+              color="#fff"
+              style={styles.buttonIcon}
+            />
+            <Text style={styles.buttonText}>Diagnostic complet</Text>
+          </TouchableOpacity>
+
+          {/* Bouton de scan d'adresses IP */}
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: "#e67e22", marginTop: 10 }
+            ]}
+            onPress={async () => {
+              const possibleIPs = [
+                "192.168.186.240",
+                "192.168.186.241",
+                "192.168.186.242",
+                "192.168.186.243",
+                "192.168.186.244",
+                "192.168.186.245",
+                "192.168.1.100",
+                "192.168.1.101",
+                "192.168.1.102"
+              ];
+
+              let foundIPs = [];
+
+              for (const ip of possibleIPs) {
+                try {
+                  console.log(`Test de l'adresse IP: ${ip}`);
+                  const response = await fetch(`http://${ip}/status`);
+
+                  if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === "ok" || data.mode === "test") {
+                      foundIPs.push({ ip, data });
+                      console.log(`ESP8266 trouvé à l'adresse: ${ip}`);
+                    }
+                  }
+                } catch (error) {
+                  console.log(`Pas d'ESP8266 à l'adresse: ${ip}`);
+                }
+              }
+
+              if (foundIPs.length > 0) {
+                let message = "ESP8266 trouvé(s) :\n\n";
+                foundIPs.forEach(({ ip, data }) => {
+                  message += `IP: ${ip}\n`;
+                  message += `Mode: ${data.mode || "N/A"}\n`;
+                  message += `RSSI: ${data.rssi || "N/A"} dBm\n\n`;
+                });
+                alert(message);
+              } else {
+                alert(
+                  "Aucun ESP8266 trouvé sur le réseau.\nVérifiez la connexion WiFi et l'alimentation."
+                );
+              }
+            }}>
+            <Ionicons
+              name="search"
+              size={20}
+              color="#fff"
+              style={styles.buttonIcon}
+            />
+            <Text style={styles.buttonText}>Scanner le réseau</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Configuration du radar */}
@@ -384,6 +570,25 @@ const styles = StyleSheet.create({
   // Nouveaux styles pour la section radar
   radarSectionContainer: {
     marginBottom: 30
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10
+  },
+  radarVisualizationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 8,
+    borderRadius: 8
+  },
+  radarVisualizationText: {
+    color: "#1a73e8",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6
   },
   infoCardsContainer: {
     flexDirection: "row",
