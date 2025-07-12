@@ -113,17 +113,57 @@ export function setupNotificationHandlers(
   };
 }
 
-// Fonction pour envoyer une notification d'alerte
+// Fonction pour vérifier les permissions de notification
+export async function checkNotificationPermissions() {
+  const { status } = await Notifications.getPermissionsAsync();
+  return status === "granted";
+}
+
+// Fonction pour demander les permissions de notification
+export async function requestNotificationPermissions() {
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === "granted";
+}
+
+// Fonction pour envoyer une notification d'alerte améliorée
 export async function sendAlertNotification(
   type: string,
   message: string,
   data?: any
 ) {
-  const title = `Alerte ${type}`;
-  await sendLocalNotification(title, message, {
-    type,
-    ...data
-  });
+  try {
+    // Vérifier les permissions
+    const hasPermission = await checkNotificationPermissions();
+    if (!hasPermission) {
+      console.log("Permissions de notification non accordées");
+      return;
+    }
+
+    const title = `🚨 Alerte ${type}`;
+    const body = message;
+    
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: {
+          type: "alert",
+          alertType: type,
+          timestamp: new Date().toISOString(),
+          ...data
+        },
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        vibrate: [0, 250, 250, 250],
+        badge: 1
+      },
+      trigger: null // Notification immédiate
+    });
+    
+    console.log("Notification d'alerte envoyée:", title);
+  } catch (error) {
+    console.error("Erreur lors de l'envoi de la notification d'alerte:", error);
+  }
 }
 
 // Fonction pour envoyer une notification de mouvement détecté

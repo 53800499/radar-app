@@ -14,13 +14,13 @@
 #define TFT_RST  4  // GPIO16 (D0) ou U8G_PIN_NONE si non câblé
 
 // Configuration WiFi
-const char* ssid = "TECNO SPARK 10C";
-const char* password = "simple1234";
+const char* ssid = "Bossaa";
+const char* password = "Cl@97009021!";
 const char* deviceName = "ESP8266-Radar-Simple";
 
 // Configuration réseau
-IPAddress localIP(10, 72, 98, 101);   // IP de l’ESP8266 (choisis un nombre libre)
-IPAddress gateway(10, 72, 98, 80);    // Passerelle = celle de ton PC (ipconfig)
+IPAddress localIP(192, 168, 1, 101);   // IP de l’ESP8266 (choisis un nombre libre)
+IPAddress gateway(192, 168, 1, 1);    // Passerelle = celle de ton PC (ipconfig)
 IPAddress subnet(255, 255, 255, 0);   // Masque
 
 // Initialisation des composants
@@ -36,10 +36,16 @@ int base = 228;
 int scanline = 215;
 
 // --- Variables pour le comptage et l'alerte ---
-int objectCount = 0;                // Nombre d'objets détectés lors du balayage
+int objectCountRightToLeft = 0;     // Comptage droite→gauche
+int objectCountLeftToRight = 0;     // Comptage gauche→droite
 int initialObjectCount = 2;         // Valeur initiale attendue (modifiable)
 bool objectDetected = false;        // Flag pour éviter le double comptage
 const int detectionThreshold = 30;  // Distance seuil pour détection (en cm)
+
+// Variables pour la décision d'alerte
+bool alertConfirmed = false;        // Alerte confirmée par les deux sens
+int consecutiveAnomalies = 0;       // Nombre d'anomalies consécutives
+const int REQUIRED_CONSECUTIVE = 2; // Nombre d'anomalies consécutives pour confirmer
 
 // Variables pour l'API
 int currentAngle = 90;
@@ -47,6 +53,7 @@ int currentDistance = 0;
 bool alertActive = false;
 String lastAlertMessage = "";
 String lastAlertType = "";
+String lastSweepDirection = ""; // "right-to-left" ou "left-to-right"
 
 // Variables pour le dédoublonnage des alertes sur l'ESP
 unsigned long lastAlertTriggerTimestamp = 0;
@@ -135,15 +142,28 @@ int calculateDistance() {
 int smoothDistance() {
   int sum = 0;
   int validCount = 0;
-  for (int i = 0; i < 5; i++) { // 5 mesures pour plus de stabilité
+  int minDistance = 999;
+  int maxDistance = 0;
+  
+  // Prendre plus de mesures pour plus de stabilité
+  for (int i = 0; i < 7; i++) { // Augmenté de 5 à 7
     int d = calculateDistance();
-    if (d > 0) {
+    if (d > 0 && d < 400) { // Filtrer les valeurs aberrantes
       sum += d;
       validCount++;
+      if (d < minDistance) minDistance = d;
+      if (d > maxDistance) maxDistance = d;
     }
-    delay(2);
+    delay(3); // Légèrement plus de délai
   }
-  if (validCount == 0) return 0;
+  
+  if (validCount < 4) return 0; // Au moins 4 mesures valides
+  
+  // Rejeter si l'écart est trop important (bruit)
+  if (maxDistance - minDistance > 20) {
+    return 0; // Mesure rejetée
+  }
+  
   return sum / validCount;
 }
 
@@ -232,13 +252,15 @@ void loop() {
   server.handleClient();
   
   int distance;
-  objectCount = 0;
+  objectCountRightToLeft = 0;
+  objectCountLeftToRight = 0;
   bool inObject = false;
 
   fix();
   fix_font();
 
-  // Balayage de droite à gauche
+  // === BALAYAGE DROITE → GAUCHE ===
+  lastSweepDirection = "right-to-left";
   for (int x = 160; x >= 20; x -= 1) {
     server.handleClient(); // Gérer les requêtes pendant le balayage
     baseServo.write(x);
@@ -260,7 +282,9 @@ void loop() {
 
     // Comptage d'objet par front montant
     if (!inObject && distance > 0 && distance < detectionThreshold) {
-      objectCount++;
+      if(objectCountRightToLeft < 3){
+        objectCountRightToLeft++;
+      }
       inObject = true;
     } else if (inObject && (distance >= detectionThreshold || distance <= 0)) {
       inObject = false;
@@ -271,32 +295,20 @@ void loop() {
     ucg.setColor(0, 200, 0);
     ucg.setPrintPos(0, 238); ucg.print("DEG: ");
     ucg.setPrintPos(24, 238); ucg.print(x); ucg.print("  ");
-    ucg.setPrintPos(120, 238); ucg.print("OBJ: "); ucg.print(objectCount);
+    ucg.setPrintPos(120, 238); ucg.print("OBJ: "); ucg.print(objectCountRightToLeft);
     ucg.setPrintPos(200, 238); ucg.print("REF: "); ucg.print(initialObjectCount);
     ucg.setPrintPos(260, 238); ucg.print(distance); ucg.print("cm  ");
     delay(5); // Vitesse du servo augmentée (était 8)
-  }
-
-  // Vérification et affichage de l'alerte après balayage
-  if (objectCount > initialObjectCount) {
-    triggerAlert("ALERTE: INTRUSION !", "intrusion dans le système");
-  } 
-  /* else if (objectCount < initialObjectCount) {
-    triggerAlert("ALERTE: MANQUE !", "manque");
-  } */ 
-  else {
-    alertActive = false;
-    lastAlertMessage = ""; // Réinitialiser si tout est normal
   }
 
   ucg.clearScreen();
   fix();
   fix_font();
 
-  objectCount = 0;
-  inObject = false;
+  inObject = false; // Réinitialiser pour le second balayage
 
-  // Balayage de gauche à droite
+  // === BALAYAGE GAUCHE → DROITE ===
+  lastSweepDirection = "left-to-right";
   for (int x = 20; x < 161; x += 1) {
     server.handleClient(); // Gérer les requêtes pendant le balayage
     baseServo.write(x);
@@ -318,7 +330,9 @@ void loop() {
 
     // Comptage d'objet par front montant
     if (!inObject && distance > 0 && distance < detectionThreshold) {
-      objectCount++;
+      if(objectCountLeftToRight < 3){
+        objectCountLeftToRight++;
+      }
       inObject = true;
     } else if (inObject && (distance >= detectionThreshold || distance <= 0)) {
       inObject = false;
@@ -329,21 +343,51 @@ void loop() {
     ucg.setColor(0, 200, 0);
     ucg.setPrintPos(0, 238); ucg.print("DEG: ");
     ucg.setPrintPos(24, 238); ucg.print(x); ucg.print("  ");
-    ucg.setPrintPos(120, 238); ucg.print("OBJ: "); ucg.print(objectCount);
+    ucg.setPrintPos(120, 238); ucg.print("OBJ: "); ucg.print(objectCountLeftToRight);
     ucg.setPrintPos(200, 238); ucg.print("REF: "); ucg.print(initialObjectCount);
     ucg.setPrintPos(260, 238); ucg.print(distance); ucg.print("cm   ");
     delay(5); // Vitesse du servo augmentée (était 8)
   }
 
-  // Vérification et affichage de l'alerte après balayage
-  if (objectCount > initialObjectCount) {
-    triggerAlert("ALERTE: INTRUSION !", "intrusion dans le système");
-  } /* else if (objectCount < initialObjectCount) {
-    triggerAlert("ALERTE: MANQUE !", "manque");
-  } */ else {
+  // === NOUVELLE LOGIQUE DE DÉCISION D'ALERTE ===
+  bool anomalyDetected = false;
+  
+  // Vérifier si les deux balayages détectent une anomalie
+  if (objectCountRightToLeft > initialObjectCount && objectCountLeftToRight > initialObjectCount) {
+    anomalyDetected = true;
+    consecutiveAnomalies++;
+    
+    // Afficher les détails pour debug
+    Serial.print("Anomalie détectée - Droite→Gauche: ");
+    Serial.print(objectCountRightToLeft);
+    Serial.print(", Gauche→Droite: ");
+    Serial.print(objectCountLeftToRight);
+    Serial.print(", Consécutives: ");
+    Serial.println(consecutiveAnomalies);
+    
+    // Déclencher l'alerte seulement après confirmation
+    if (consecutiveAnomalies >= REQUIRED_CONSECUTIVE) {
+      triggerAlert("Intrusion dans l'enclo !", "INTRUSION");
+      alertConfirmed = true;
+    }
+  } else {
+    // Situation normale
+    consecutiveAnomalies = 0;
+    alertConfirmed = false;
     alertActive = false;
-    lastAlertMessage = ""; // Réinitialiser si tout est normal
+    lastAlertMessage = "";
   }
+
+  // Afficher les comptages sur l'écran
+  ucg.setColor(0, 200, 0);
+  ucg.setPrintPos(0, 220); 
+  ucg.print("D→G: "); ucg.print(objectCountRightToLeft);
+  ucg.setPrintPos(80, 220); 
+  ucg.print("G→D: "); ucg.print(objectCountLeftToRight);
+  ucg.setPrintPos(160, 220); 
+  ucg.print("REF: "); ucg.print(initialObjectCount);
+  ucg.setPrintPos(240, 220); 
+  ucg.print("CONF: "); ucg.print(consecutiveAnomalies);
 
   ucg.clearScreen();
 }
@@ -372,7 +416,7 @@ void setupWebServer() {
     StaticJsonDocument<256> doc;
     doc["angle"] = currentAngle;
     doc["distance"] = currentDistance;
-    doc["objectCount"] = objectCount;
+    doc["objectCount"] = objectCountRightToLeft; // Utiliser le comptage du balayage droite→gauche
     doc["timestamp"] = getCurrentTimestamp();
     
     String response;
@@ -389,7 +433,7 @@ void setupWebServer() {
       doc["type"] = lastAlertType;
       doc["message"] = lastAlertMessage;
       doc["timestamp"] = getCurrentTimestamp();
-      doc["objectCount"] = objectCount;
+      doc["objectCount"] = objectCountRightToLeft; // Utiliser le comptage du balayage droite→gauche
       doc["expectedCount"] = initialObjectCount;
       doc["active"] = true;
       
@@ -414,7 +458,11 @@ void setupWebServer() {
       alert["type"] = lastAlertType;
       alert["message"] = lastAlertMessage;
       alert["timestamp"] = getCurrentTimestamp();
-      alert["objectCount"] = objectCount;
+      if (lastSweepDirection == "left-to-right") {
+        doc["objectCount"] = objectCountLeftToRight;
+      } else {
+        doc["objectCount"] = objectCountRightToLeft;
+      }
       alert["expectedCount"] = initialObjectCount;
     }
     
@@ -492,7 +540,7 @@ void setupWebServer() {
       html += "<strong>ALERTE ACTIVE:</strong><br>";
       html += "Type: " + lastAlertType + "<br>";
       html += "Message: " + lastAlertMessage + "<br>";
-      html += "Objets: " + String(objectCount) + "/" + String(initialObjectCount) + "<br>";
+      html += "Objets: " + String(objectCountRightToLeft) + "/" + String(initialObjectCount) + "<br>"; // Utiliser le comptage du balayage droite→gauche
       html += "Heure: " + getCurrentTimestamp();
       html += "</div>";
     }

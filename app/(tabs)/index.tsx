@@ -3,7 +3,7 @@ import { ESP32CameraStream } from "@/components/ESP32CameraStream";
 import Header from "@/components/Header";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { getUnreadAlertsCount } from "@/utils/database";
+import { useUnreadAlerts } from "@/hooks/useUnreadAlerts";
 import {
   configureRadar,
   fetchRadarData,
@@ -12,8 +12,9 @@ import {
 } from "@/utils/esp8266Service";
 import { ESP32_CAM_IP } from "@/utils/networkConfig";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   RefreshControl,
@@ -36,7 +37,7 @@ export default function AccueilScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { unreadCount, updateUnreadCount } = useUnreadAlerts();
   const colorScheme = useColorScheme();
   const backgroundColor = Colors[colorScheme ?? "light"].background;
   const textColor = Colors[colorScheme ?? "light"].text;
@@ -86,13 +87,11 @@ export default function AccueilScreen() {
         if (config) {
           setExpectedCount(config.expectedCount);
         }
-        const count = await getUnreadAlertsCount();
-        setUnreadCount(count);
+        updateUnreadCount(); // Initial call to update unread count
 
         const stopListener = startAlertListener(async (alert) => {
           console.log("Nouvelle alerte reçue:", alert);
-          const newCount = await getUnreadAlertsCount();
-          setUnreadCount(newCount);
+          updateUnreadCount();
         });
 
         const radarInterval = setInterval(async () => {
@@ -129,6 +128,13 @@ export default function AccueilScreen() {
     initializeRadar();
   }, []);
 
+  // Mettre à jour le nombre d'alertes non lues quand on revient sur la page
+  useFocusEffect(
+    useCallback(() => {
+      updateUnreadCount();
+    }, [])
+  );
+
   const getDistanceValueColor = () => {
     if (distance < 50) return "#e74c3c";
     if (distance < 100) return "#f39c12";
@@ -164,7 +170,13 @@ export default function AccueilScreen() {
     setIsLoading(true);
     setRefreshKey((prev) => prev + 1); // recharge la caméra
     console.log("Caméra rechargée, refreshKey:", refreshKey + 1);
-
+    setIsLoading(false);
+    console.log("=== FIN REFRESH ===");
+  };
+  const handleRefreshRadar = async () => {
+    console.log("=== DÉBUT REFRESH ===");
+    setError(null);
+    setIsLoading(true);
     // Récupère immédiatement les données radar
     try {
       console.log("Tentative de récupération des données radar...");
@@ -201,7 +213,7 @@ export default function AccueilScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await handleRefresh();
+    await handleRefreshRadar();
     setRefreshing(false);
   };
 

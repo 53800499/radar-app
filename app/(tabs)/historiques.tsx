@@ -1,12 +1,12 @@
 /** @format */
 
 import Header from "@/components/Header";
+import { useUnreadAlerts } from "@/hooks/useUnreadAlerts";
 import {
   Alert as AlertType,
   deleteAlertById,
   deleteAllAlerts,
-  getAlerts,
-  getUnreadAlertsCount
+  getAlerts
 } from "@/utils/database";
 import { startAlertListener } from "@/utils/esp8266Service";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,21 +47,20 @@ const HistoriqueScreen = () => {
   const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { unreadCount, updateUnreadCount } = useUnreadAlerts();
 
   const loadAlerts = useCallback(async () => {
     try {
       setIsLoading(true);
       const localAlerts = await getAlerts();
-      const count = await getUnreadAlertsCount();
       setAlerts(localAlerts);
-      setUnreadCount(count);
+      updateUnreadCount(); // Mettre à jour le nombre d'alertes non lues
     } catch (error) {
       console.error("Erreur lors du chargement des alertes:", error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [updateUnreadCount]);
 
   useEffect(() => {
     loadAlerts();
@@ -91,6 +90,7 @@ const HistoriqueScreen = () => {
           onPress: async () => {
             await deleteAlertById(id);
             loadAlerts();
+            updateUnreadCount(); // Mettre à jour le nombre d'alertes non lues
           }
         }
       ]
@@ -109,6 +109,7 @@ const HistoriqueScreen = () => {
           onPress: async () => {
             await deleteAllAlerts();
             loadAlerts(); // Recharger pour voir la liste vide
+            updateUnreadCount(); // Mettre à jour le nombre d'alertes non lues
           }
         }
       ]
@@ -118,8 +119,9 @@ const HistoriqueScreen = () => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadAlerts();
+    updateUnreadCount(); // Mettre à jour le nombre d'alertes non lues
     setRefreshing(false);
-  }, [loadAlerts]);
+  }, [loadAlerts, updateUnreadCount]);
 
   const renderAlertItem = ({ item }: { item: AlertType }) => (
     <View style={styles.alertItemContainer}>
