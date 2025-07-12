@@ -4,7 +4,7 @@
     "slug": "radarApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/background.jpg",
     "scheme": "radarapp",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -13,18 +13,29 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/background.jpg",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.eskay_dev.radarApp"
+      "package": "com.eskay_dev.radarApp",
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE"
+      ]
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/background.jpg"
     },
-    "plugins": ["expo-router", "expo-sqlite", "expo-notifications", "expo-video"],
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-notifications",
+      "expo-video"
+    ],
     "experiments": {
       "typedRoutes": true
     },

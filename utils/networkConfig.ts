@@ -3,13 +3,13 @@
 
 // --- Configuration des adresses IP ---
 // Remplacez ces adresses par celles de vos ESP
-export const ESP8266_IP = "192.168.186.240"; // Adresse de l'ESP8266 pour le radar
-export const ESP32_CAM_IP = "10.58.156.208"; // Adresse de l'ESP32-CAM pour la vidéo
+export const ESP8266_IP = "192.168.1.101"; // Adresse de l'ESP8266 pour le radar
+export const ESP32_CAM_IP = "192.168.1.100"; // Adresse de l'ESP32-CAM pour la vidéo
 
 // URL de base pour les API
-export const ESP8266_BASE_URL = `http://${ESP8266_IP}`;
+export const ESP8266_BASE_URL = `http://${ESP8266_IP}:81`;
 export const ESP32_CAM_STREAM_URL = `http://${ESP32_CAM_IP}:81/stream`;
-export const ESP32_CAM_STATUS_URL = `http://${ESP32_CAM_IP}/status`;
+export const ESP32_CAM_STATUS_URL = `http://${ESP32_CAM_IP}:81/status`;
 
 const HTTP_TIMEOUT = 5000;
 
@@ -18,7 +18,7 @@ export const checkESP32Connectivity = async (ip: string): Promise<boolean> => {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
-    const response = await fetch(`http://${ip}/status`, {
+    const response = await fetch(`http://${ip}:81/status`, {
       signal: controller.signal
     });
     clearTimeout(timeoutId);

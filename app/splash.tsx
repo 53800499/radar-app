@@ -1,7 +1,7 @@
 /** @format */
 
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
+import React from "react";
 import {
   Dimensions,
   ImageBackground,
@@ -16,12 +16,6 @@ const { width, height } = Dimensions.get("window");
 const SplashScreen = () => {
   const router = useRouter();
   const backgroundImage = require("../assets/background.jpg");
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      router.push("/(tabs)");
-    }, 3000); // 3 secondes
-    return () => clearTimeout(timeout);
-  }, []);
   const handleLetsStart = () => {
     router.push("/(tabs)");
   };
@@ -62,7 +56,7 @@ const styles = StyleSheet.create({
     height: height
   },
   backgroundImage: {
-    opacity: 0.9
+    opacity: 1
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

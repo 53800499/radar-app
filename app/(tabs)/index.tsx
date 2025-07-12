@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -40,6 +41,7 @@ export default function AccueilScreen() {
   const backgroundColor = Colors[colorScheme ?? "light"].background;
   const textColor = Colors[colorScheme ?? "light"].text;
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
 
   const cardScale = useRef(new Animated.Value(0.95)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
@@ -156,10 +158,51 @@ export default function AccueilScreen() {
     });
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
+    console.log("=== DÉBUT REFRESH ===");
     setError(null);
     setIsLoading(true);
-    setRefreshKey((prev) => prev + 1);
+    setRefreshKey((prev) => prev + 1); // recharge la caméra
+    console.log("Caméra rechargée, refreshKey:", refreshKey + 1);
+
+    // Récupère immédiatement les données radar
+    try {
+      console.log("Tentative de récupération des données radar...");
+      const radarData = await fetchRadarData();
+      console.log("Données radar reçues:", radarData);
+
+      if (radarData) {
+        setDistance(radarData.distance);
+        setObjectCount(radarData.objectCount);
+        setRadarStatus("Connecté");
+        console.log("Données radar mises à jour:", {
+          distance: radarData.distance,
+          objectCount: radarData.objectCount
+        });
+      } else {
+        setRadarStatus("Aucune donnée");
+        console.log("Aucune donnée radar reçue");
+      }
+    } catch (error) {
+      console.log("=== ERREUR REFRESH RADAR ===");
+      console.log(
+        "Type d'erreur:",
+        error instanceof Error ? error.constructor.name : typeof error
+      );
+      console.log(
+        "Message d'erreur:",
+        error instanceof Error ? error.message : String(error)
+      );
+      setRadarStatus("Erreur");
+    }
+    setIsLoading(false);
+    console.log("=== FIN REFRESH ===");
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await handleRefresh();
+    setRefreshing(false);
   };
 
   const handleConfigureRadar = async () => {
@@ -186,7 +229,11 @@ export default function AccueilScreen() {
         subtitle="Contrôle en temps réel"
         notificationCount={unreadCount}
       />
-      <ScrollView style={styles.contentContainer}>
+      <ScrollView
+        style={styles.contentContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }>
         {/* Section Radar (Nouveau Design) */}
         <View style={styles.radarSectionContainer}>
           <View style={styles.sectionHeader}>
@@ -340,7 +387,6 @@ export default function AccueilScreen() {
               {isStreaming ? "Arrêter" : "Démarrer"} le flux
             </Text>
           </TouchableOpacity>
-
           {/* Bouton de test de connectivité */}
           <TouchableOpacity
             style={[
@@ -349,9 +395,16 @@ export default function AccueilScreen() {
             ]}
             onPress={async () => {
               try {
-                const response = await fetch(`http://${ipAddress}/status`);
+                console.log("=== TEST CONNEXION ESP32-CAM ===");
+                console.log("URL testée:", `http://${ipAddress}:81/status`);
+                console.log("Début de la requête...");
+
+                const response = await fetch(`http://${ipAddress}:81/status`);
+                console.log("Réponse reçue, status:", response.status);
+
                 if (response.ok) {
-                  console.log("ESP32-CAM connecté !");
+                  const data = await response.json();
+                  console.log("ESP32-CAM connecté !", data);
                   alert("ESP32-CAM connecté avec succès !");
                 } else {
                   console.log(
@@ -363,9 +416,24 @@ export default function AccueilScreen() {
                   );
                 }
               } catch (error) {
-                console.log("Erreur de connexion ESP32-CAM:", error);
+                console.log("=== ERREUR ESP32-CAM ===");
+                console.log(
+                  "Type d'erreur:",
+                  error instanceof Error ? error.constructor.name : typeof error
+                );
+                console.log(
+                  "Message d'erreur:",
+                  error instanceof Error ? error.message : String(error)
+                );
+                console.log(
+                  "Stack trace:",
+                  error instanceof Error ? error.stack : "N/A"
+                );
+
                 alert(
-                  "Erreur de connexion ESP32-CAM. Vérifiez l'adresse IP et la connexion WiFi."
+                  `Erreur de connexion ESP32-CAM: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`
                 );
               }
             }}>
@@ -375,9 +443,8 @@ export default function AccueilScreen() {
               color="#fff"
               style={styles.buttonIcon}
             />
-            <Text style={styles.buttonText}>Tester la connexion</Text>
+            <Text style={styles.buttonText}>Tester la connexion ESP32...</Text>
           </TouchableOpacity>
-
           {/* Bouton de test de connectivité ESP8266 */}
           <TouchableOpacity
             style={[
@@ -386,12 +453,14 @@ export default function AccueilScreen() {
             ]}
             onPress={async () => {
               try {
-                console.log("Test de connexion ESP8266...");
-                console.log("URL testée:", "http://192.168.186.240/status");
+                console.log("=== TEST CONNEXION ESP8266 ===");
+                console.log("URL testée:", "http://10.72.98.101:81/status");
+                console.log("Début de la requête...");
 
-                const response = await fetch("http://192.168.186.240/status", {
+                const response = await fetch("http://10.72.98.101:81/status", {
                   method: "GET"
                 });
+                console.log("Réponse reçue, status:", response.status);
 
                 if (response.ok) {
                   const data = await response.json();
@@ -409,7 +478,7 @@ export default function AccueilScreen() {
                   alert(`ESP8266 répond mais avec erreur: ${response.status}`);
                 }
               } catch (error) {
-                console.log("Erreur de connexion ESP8266:", error);
+                console.log("=== ERREUR ESP8266 ===");
                 console.log(
                   "Type d'erreur:",
                   error instanceof Error ? error.constructor.name : typeof error
@@ -417,6 +486,10 @@ export default function AccueilScreen() {
                 console.log(
                   "Message d'erreur:",
                   error instanceof Error ? error.message : String(error)
+                );
+                console.log(
+                  "Stack trace:",
+                  error instanceof Error ? error.stack : "N/A"
                 );
 
                 let errorMessage =
@@ -441,8 +514,7 @@ export default function AccueilScreen() {
             />
             <Text style={styles.buttonText}>Tester ESP8266</Text>
           </TouchableOpacity>
-
-          {/* Bouton de diagnostic complet ESP8266 */}
+          ;{/* Bouton de diagnostic complet ESP8266 */}
           <TouchableOpacity
             style={[
               styles.button,
@@ -457,8 +529,7 @@ export default function AccueilScreen() {
             />
             <Text style={styles.buttonText}>Diagnostic complet</Text>
           </TouchableOpacity>
-
-          {/* Bouton de scan d'adresses IP */}
+          ;{/* Bouton de scan d'adresses IP */}
           <TouchableOpacity
             style={[
               styles.button,
@@ -466,14 +537,14 @@ export default function AccueilScreen() {
             ]}
             onPress={async () => {
               const possibleIPs = [
-                "192.168.186.240",
-                "192.168.186.241",
-                "192.168.186.242",
-                "192.168.186.243",
-                "192.168.186.244",
-                "192.168.186.245",
                 "192.168.1.100",
-                "192.168.1.101",
+                "192.168.1.103",
+                "192.168.1.104",
+                "192.168.1.105",
+                "192.168.1.106",
+                "192.168.1.107",
+                "192.168.1.108",
+                "192.168.1.109",
                 "192.168.1.102"
               ];
 
@@ -482,7 +553,7 @@ export default function AccueilScreen() {
               for (const ip of possibleIPs) {
                 try {
                   console.log(`Test de l'adresse IP: ${ip}`);
-                  const response = await fetch(`http://${ip}/status`);
+                  const response = await fetch(`http://${ip}:81/status`);
 
                   if (response.ok) {
                     const data = await response.json();
@@ -518,6 +589,7 @@ export default function AccueilScreen() {
             />
             <Text style={styles.buttonText}>Scanner le réseau</Text>
           </TouchableOpacity>
+          ;
         </View>
 
         {/* Configuration du radar */}
